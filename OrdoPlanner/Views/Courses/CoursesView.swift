@@ -25,6 +25,8 @@ struct CoursesView: View {
     @StateObject private var viewModel = CoursesViewModel()
     @State private var draft = CourseEditorView.Draft()
     @State private var selectedWeekday: Weekday?
+    @State private var selectedWeekDate = Date()
+    @State private var showingWeekPicker = false
     @AppStorage(AppPreferences.timelineSelectedWeekdayKey) private var persistedSelectedWeekdayRaw = -1
     @AppStorage(AppPreferences.compactCardsEnabledKey) private var compactCardsEnabled = false
     @AppStorage(AppPreferences.showCourseCodesKey) private var showCourseCodes = true
@@ -52,7 +54,7 @@ struct CoursesView: View {
             }
             .navigationTitle("Timeline")
             .safeAreaInset(edge: .top, spacing: 0) {
-                weekdayFilterStrip
+                weekCalendarBar
                     .padding(.horizontal, AppTheme.screenPadding)
                     .padding(.top, 6)
                     .padding(.bottom, 8)
@@ -74,6 +76,32 @@ struct CoursesView: View {
                     draft: $draft,
                     onSave: saveCourse
                 )
+            }
+            .sheet(isPresented: $showingWeekPicker) {
+                NavigationStack {
+                    DatePicker(
+                        "Select a date in the week",
+                        selection: $selectedWeekDate,
+                        displayedComponents: [.date]
+                    )
+                    .datePickerStyle(.graphical)
+                    .padding()
+                    .navigationTitle("Select Week")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("This Week") {
+                                selectedWeekDate = Date()
+                            }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") {
+                                showingWeekPicker = false
+                            }
+                        }
+                    }
+                }
+                .presentationDetents([.medium, .large])
             }
             .onAppear {
                 hydrateSelectedWeekdayIfNeeded()
@@ -97,7 +125,7 @@ struct CoursesView: View {
                 let activeDays = days.isEmpty ? [nil] : days.map(Optional.some)
 
                 return activeDays.map { day in
-                    let startsAt = dayStartDate(for: day, timeSource: course.startTime)
+                    let startsAt = dayStartDate(for: day, timeSource: course.startTime, weekReference: selectedWeekDate)
                     let dayPart = day.map { String($0.rawValue) } ?? "unscheduled"
                     return TimelineItem(id: "\(course.id.uuidString)-\(dayPart)", course: course, weekday: day, startsAt: startsAt)
                 }
@@ -138,37 +166,85 @@ struct CoursesView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var weekdayFilterStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                weekdayChip(title: "All", selected: selectedWeekday == nil) {
+    private var weekCalendarBar: some View {
+        HStack(spacing: 8) {
+            Button {
+                showingWeekPicker = true
+            } label: {
+                Label(weekRangeLabel, systemImage: "calendar")
+                    .lineLimit(1)
+            }
+            .buttonStyle(.bordered)
+
+            Menu {
+                Button("All Days") {
                     setSelectedWeekday(nil)
                 }
 
-                weekdayChip(title: "Today", selected: selectedWeekday == currentWeekday()) {
+                Button("Today") {
                     setSelectedWeekday(currentWeekday())
                 }
 
+                Divider()
+
                 ForEach(Weekday.allCases) { weekday in
-                    weekdayChip(title: dayTitle(weekday), selected: selectedWeekday == weekday) {
+                    Button {
                         setSelectedWeekday(weekday)
+                    } label: {
+                        if selectedWeekday == weekday {
+                            Label(dayTitle(weekday), systemImage: "checkmark")
+                        } else {
+                            Text(dayTitle(weekday))
+                        }
                     }
                 }
+            } label: {
+                Label(selectedDayFilterLabel, systemImage: "line.3.horizontal.decrease.circle")
+                    .lineLimit(1)
             }
+            .buttonStyle(.bordered)
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 2) {
+                Button {
+                    shiftWeek(by: -1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(.plain)
+                .frame(width: 28, height: 28)
+
+                Button {
+                    shiftWeek(by: 1)
+                } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .buttonStyle(.plain)
+                .frame(width: 28, height: 28)
+            }
+            .foregroundStyle(.secondary)
         }
     }
 
-    private func weekdayChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.footnote.weight(.semibold))
-                .padding(.vertical, 8)
-                .padding(.horizontal, 12)
-                .background(selected ? AppTheme.accent.opacity(0.16) : Color.secondary.opacity(0.12))
-                .foregroundStyle(selected ? AppTheme.accent : .secondary)
-                .clipShape(Capsule())
+    private var selectedDayFilterLabel: String {
+        guard let selectedWeekday else {
+            return "All Days"
         }
-        .buttonStyle(.plain)
+        return dayTitle(selectedWeekday)
+    }
+
+    private var weekRangeLabel: String {
+        let start = weekStart(for: selectedWeekDate)
+        let end = Calendar.current.date(byAdding: .day, value: 6, to: start) ?? start
+        let formatter = DateFormatter()
+        formatter.locale = .current
+        formatter.dateFormat = "MMM d"
+        return "\(formatter.string(from: start)) - \(formatter.string(from: end))"
+    }
+
+    private func shiftWeek(by value: Int) {
+        selectedWeekDate = Calendar.current.date(byAdding: .day, value: value * 7, to: selectedWeekDate) ?? selectedWeekDate
     }
 
     private func setSelectedWeekday(_ weekday: Weekday?) {
@@ -245,76 +321,81 @@ struct CoursesView: View {
 
     @ViewBuilder
     private func timelineRow(item: TimelineItem, isLast: Bool) -> some View {
-        let markerSize: CGFloat = compactCardsEnabled ? 38 : 46
-        let symbolSize: CGFloat = compactCardsEnabled ? 16 : 20
-        let lineWidth: CGFloat = compactCardsEnabled ? 3 : 4
-        let titleSize: CGFloat = compactCardsEnabled ? 20 : 24
-        let detailSize: CGFloat = compactCardsEnabled ? 15 : 17
-        let metaSize: CGFloat = compactCardsEnabled ? 13 : 14
+        let markerSize: CGFloat = compactCardsEnabled ? 14 : 16
+        let lineWidth: CGFloat = compactCardsEnabled ? 2 : 2.5
+        let titleSize: CGFloat = compactCardsEnabled ? 18 : 20
+        let detailSize: CGFloat = compactCardsEnabled ? 14 : 15
+        let metaSize: CGFloat = compactCardsEnabled ? 12 : 13
         let cardPadding: CGFloat = compactCardsEnabled ? 10 : AppTheme.cardPadding
         let cornerRadius: CGFloat = compactCardsEnabled ? 18 : AppTheme.cardCornerRadius
 
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: 12) {
             VStack(spacing: 0) {
                 Circle()
                     .fill(Color(hex: item.course.colorHex))
                     .frame(width: markerSize, height: markerSize)
-                    .overlay {
-                        Image(systemName: courseSymbol(for: item.course))
-                            .font(.system(size: symbolSize, weight: .regular))
-                            .foregroundStyle(.white)
-                    }
 
                 if !isLast {
                     Rectangle()
-                        .fill(Color(hex: item.course.colorHex).opacity(0.45))
+                        .fill(Color(hex: item.course.colorHex).opacity(0.35))
                         .frame(width: lineWidth)
                         .frame(maxHeight: .infinity)
                 }
             }
-            .frame(width: markerSize)
+            .frame(width: markerSize, alignment: .top)
 
             VStack(alignment: .leading, spacing: 10) {
-                Text(item.course.name)
-                    .font(.system(size: titleSize, weight: .semibold))
-                    .foregroundStyle(Color(hex: item.course.colorHex))
+                HStack(alignment: .top, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.course.name)
+                            .font(.system(size: titleSize, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.primary)
 
-                Text(timeLineText(for: item.course))
-                    .font(.system(size: detailSize, weight: .semibold))
-                    .foregroundStyle(Color(hex: item.course.colorHex).opacity(0.95))
+                        Text(timeLineText(for: item.course))
+                            .font(.system(size: detailSize, weight: .semibold))
+                            .foregroundStyle(Color(hex: item.course.colorHex))
 
-                Text(locationLineText(for: item))
-                    .font(.system(size: detailSize - 2, weight: .regular))
-                    .foregroundStyle(.secondary)
-
-                HStack(spacing: 14) {
-                    if let weekday = item.weekday {
-                        Text(dayTitle(weekday))
-                            .font(.system(size: metaSize, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Unscheduled")
-                            .font(.system(size: metaSize, weight: .medium))
+                        Text(locationLineText(for: item))
+                            .font(.system(size: detailSize - 1, weight: .regular))
                             .foregroundStyle(.secondary)
                     }
+
+                    Spacer(minLength: 0)
+
+                    Menu {
+                        Button {
+                            startEditing(item.course)
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+
+                        Button(role: .destructive) {
+                            deleteCourse(item.course)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                HStack(spacing: 10) {
+                    Text(item.weekday.map(dayTitle) ?? "Unscheduled")
+                        .font(.system(size: metaSize, weight: .medium))
+                        .foregroundStyle(.secondary)
+
+                    Circle()
+                        .fill(Color.secondary.opacity(0.28))
+                        .frame(width: 3, height: 3)
+
+                    Text(durationText(for: item.course))
+                        .font(.system(size: metaSize, weight: .medium))
+                        .foregroundStyle(.secondary)
 
                     Spacer()
-
-                    Button {
-                        startEditing(item.course)
-                    } label: {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 22, weight: .semibold))
-                    }
-                    .buttonStyle(.plain)
-
-                    Button(role: .destructive) {
-                        deleteCourse(item.course)
-                    } label: {
-                        Image(systemName: "trash")
-                            .font(.system(size: 22, weight: .semibold))
-                    }
-                    .buttonStyle(.plain)
                 }
             }
             .plannerSurfaceCard(padding: cardPadding, cornerRadius: cornerRadius)
@@ -322,10 +403,10 @@ struct CoursesView: View {
         .padding(.vertical, 2)
     }
 
-    private func dayStartDate(for day: Weekday?, timeSource: Date) -> Date {
-        let order = day?.rawValue ?? 7
-        let base = Calendar.current.startOfDay(for: Date())
-        let dayOffset = Calendar.current.date(byAdding: .day, value: order, to: base) ?? base
+    private func dayStartDate(for day: Weekday?, timeSource: Date, weekReference: Date) -> Date {
+        let start = weekStart(for: weekReference)
+        let offset = day?.rawValue ?? 7
+        let dayOffset = Calendar.current.date(byAdding: .day, value: offset, to: start) ?? start
 
         let components = Calendar.current.dateComponents([.hour, .minute], from: timeSource)
         var dayComponents = Calendar.current.dateComponents([.year, .month, .day], from: dayOffset)
@@ -333,6 +414,14 @@ struct CoursesView: View {
         dayComponents.minute = components.minute
         dayComponents.second = 0
         return Calendar.current.date(from: dayComponents) ?? dayOffset
+    }
+
+    private func weekStart(for date: Date) -> Date {
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: date)
+        let weekdayIndex = calendar.component(.weekday, from: dayStart)
+        let distanceToMonday = (weekdayIndex + 5) % 7
+        return calendar.date(byAdding: .day, value: -distanceToMonday, to: dayStart) ?? dayStart
     }
 
     private func dayTitle(_ day: Weekday) -> String {
@@ -362,6 +451,14 @@ struct CoursesView: View {
         if !location.isEmpty { return location }
         if !code.isEmpty { return code }
         return "No location"
+    }
+
+    private func durationText(for course: Course) -> String {
+        let interval = max(0, course.endTime.timeIntervalSince(course.startTime))
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = interval >= 3600 ? [.hour, .minute] : [.minute]
+        formatter.unitsStyle = .abbreviated
+        return formatter.string(from: interval) ?? "0m"
     }
 
     private func courseSymbol(for course: Course) -> String {

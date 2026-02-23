@@ -112,28 +112,34 @@ final class TasksViewModel: ObservableObject {
         focusModeEnabled = false
     }
 
-    func filteredTasks(_ tasks: [AssignmentTask], now: Date = Date()) -> [AssignmentTask] {
+    func filteredTasks(
+        _ tasks: [AssignmentTask],
+        now: Date = Date(),
+        includeAdvancedFilters: Bool = true
+    ) -> [AssignmentTask] {
         let normalizedQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
         return tasks
             .filter { task in
-                if let selectedCourseID, task.courseID != selectedCourseID {
-                    return false
-                }
-
-                switch statusFilter {
-                case .all:
-                    break
-                case .active:
-                    if task.status.isCompleted { return false }
-                case .completed:
-                    if !task.status.isCompleted { return false }
-                }
-
-                if focusModeEnabled {
-                    let focusCutoff = now.addingTimeInterval(48 * 3600)
-                    if task.status.isCompleted || task.dueDate > focusCutoff {
+                if includeAdvancedFilters {
+                    if let selectedCourseID, task.courseID != selectedCourseID {
                         return false
+                    }
+
+                    switch statusFilter {
+                    case .all:
+                        break
+                    case .active:
+                        if task.status.isCompleted { return false }
+                    case .completed:
+                        if !task.status.isCompleted { return false }
+                    }
+
+                    if focusModeEnabled {
+                        let focusCutoff = now.addingTimeInterval(48 * 3600)
+                        if task.status.isCompleted || task.dueDate > focusCutoff {
+                            return false
+                        }
                     }
                 }
 

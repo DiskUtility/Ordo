@@ -18,7 +18,8 @@ struct TasksView: View {
 
     @StateObject private var viewModel = TasksViewModel()
     @State private var draft = TaskEditorView.Draft()
-    @State private var isFilterExpanded = false
+    @State private var isFilterEnabled = false
+    @State private var isShowingFilterSheet = false
     @AppStorage(AppPreferences.compactCardsEnabledKey) private var compactCardsEnabled = false
     @AppStorage(AppPreferences.showCourseCodesKey) private var showCourseCodes = true
     @AppStorage(AppPreferences.showTaskNotesPreviewKey) private var showTaskNotesPreview = true
@@ -27,8 +28,7 @@ struct TasksView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
-                    quickStatsStrip
-                    filterToggleSection
+                    tasksFilterHeader
 
                     if filteredTasks.isEmpty {
                         ContentUnavailableView(
@@ -36,17 +36,19 @@ struct TasksView: View {
                             systemImage: viewModel.searchText.isEmpty ? "checklist" : "magnifyingglass",
                             description: Text(emptyStateDescription)
                         )
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 36)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 36)
                     } else {
-                        ForEach(filteredTasks) { task in
-                            assignmentCard(task)
-                                .onTapGesture {
-                                    startEditing(task)
-                                }
-                                .contextMenu {
-                                    contextMenuItems(for: task)
-                                }
+                        LazyVStack(spacing: compactCardsEnabled ? 10 : 12) {
+                            ForEach(filteredTasks) { task in
+                                assignmentCard(task)
+                                    .onTapGesture {
+                                        startEditing(task)
+                                    }
+                                    .contextMenu {
+                                        contextMenuItems(for: task)
+                                    }
+                            }
                         }
                     }
                 }
@@ -76,26 +78,50 @@ struct TasksView: View {
             .onAppear {
                 viewModel.syncSelectedCourse(with: courses)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .tasksAccessoryOpenFilters)) { _ in
+                isFilterEnabled = true
+                isShowingFilterSheet = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .tasksAccessoryAddTask)) { _ in
+                startCreating()
+            }
+        }
+    }
+
+    private var tasksFilterHeader: some View {
+        HStack {
+            FilterToggleButton(
+                isFilterEnabled: $isFilterEnabled,
+                isShowingSheet: $isShowingFilterSheet,
+                filteredByText: filteredByText
+            ) {
+                TaskFilterOptionsView(
+                    statusFilter: $viewModel.statusFilter,
+                    selectedCourseID: $viewModel.selectedCourseID,
+                    sortOption: $viewModel.sortOption,
+                    focusModeEnabled: $viewModel.focusModeEnabled,
+                    courses: courses,
+                    onReset: { viewModel.resetFilters() }
+                )
+            }
+            Spacer()
         }
     }
 
     private var filteredTasks: [AssignmentTask] {
-        viewModel.filteredTasks(tasks)
+        viewModel.filteredTasks(tasks, includeAdvancedFilters: isFilterEnabled)
     }
 
-    private var hasCustomFilters: Bool {
-        viewModel.statusFilter != .all ||
-            viewModel.selectedCourseID != nil ||
-            viewModel.focusModeEnabled ||
-            viewModel.sortOption != .dueSoonest ||
-            !viewModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var filterSummary: String {
-        let status = viewModel.statusFilter.title
-        let course = courses.first(where: { $0.id == viewModel.selectedCourseID })?.name ?? "All courses"
-        let focus = viewModel.focusModeEnabled ? "Focus" : "Full"
-        return "\(status) • \(course) • \(focus)"
+    private var filteredByText: String {
+        var labels: [String] = []
+        if viewModel.statusFilter != .all { labels.append(viewModel.statusFilter.title) }
+        if let selectedCourseID = viewModel.selectedCourseID,
+           let courseName = courses.first(where: { $0.id == selectedCourseID })?.name {
+            labels.append(courseName)
+        }
+        if viewModel.focusModeEnabled { labels.append("Focus") }
+        if viewModel.sortOption != .dueSoonest { labels.append(viewModel.sortOption.title) }
+        return labels.isEmpty ? "All tasks" : labels.joined(separator: ", ")
     }
 
     private var emptyStateDescription: String {
@@ -108,111 +134,6 @@ struct TasksView: View {
         return "Try another filter or add a new task."
     }
 
-    private var triageBucket: TriageBucket {
-        services.triageScorer.bucketize(tasks: tasks, now: Date(), calendar: .current)
-    }
-
-    private var quickStatsStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                statsPill(label: "Overdue", count: triageBucket.overdue.count, color: .red)
-                statsPill(label: "Today", count: triageBucket.today.count, color: AppTheme.accent)
-                statsPill(label: "Upcoming", count: triageBucket.upcoming.count, color: .orange)
-                statsPill(label: "Completed", count: tasks.filter { task in task.status.isCompleted }.count, color: AppTheme.success)
-            }
-            .padding(.vertical, 2)
-        }
-    }
-
-    private func statsPill(label: String, count: Int, color: Color) -> some View {
-        HStack(spacing: 6) {
-            Text(label)
-                .font(.caption.weight(.semibold))
-            Text("\(count)")
-                .font(.caption.monospacedDigit().weight(.bold))
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .background(color.opacity(0.12))
-        .foregroundStyle(color)
-        .clipShape(Capsule())
-    }
-
-    private var filterToggleSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Button {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
-                        isFilterExpanded.toggle()
-                    }
-                } label: {
-                    Label(
-                        isFilterExpanded ? "Hide Filters" : "Filters",
-                        systemImage: isFilterExpanded ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"
-                    )
-                    .font(.footnote.weight(.semibold))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-
-                Menu {
-                    Picker("Sort", selection: $viewModel.sortOption) {
-                        ForEach(TasksViewModel.SortOption.allCases) { option in
-                            Text(option.title).tag(option)
-                        }
-                    }
-                } label: {
-                    Label(viewModel.sortOption.title, systemImage: "arrow.up.arrow.down.circle")
-                        .font(.footnote.weight(.semibold))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-
-                Spacer()
-
-                if hasCustomFilters {
-                    Text(filterSummary)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-
-            if isFilterExpanded {
-                filterCard
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-    }
-
-    private var filterCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Picker("Status", selection: $viewModel.statusFilter) {
-                ForEach(TasksViewModel.StatusFilter.allCases) { filter in
-                    Text(filter.title).tag(filter)
-                }
-            }
-            .pickerStyle(.segmented)
-
-            Picker("Course", selection: $viewModel.selectedCourseID) {
-                Text("All courses").tag(Optional<UUID>.none)
-                ForEach(courses) { course in
-                    Text(course.name).tag(Optional(course.id))
-                }
-            }
-
-            Toggle("Focus mode (next 48h)", isOn: $viewModel.focusModeEnabled)
-                .font(.subheadline.weight(.medium))
-                .tint(AppTheme.accent)
-
-            Button("Reset filters") {
-                viewModel.resetFilters()
-            }
-            .font(.footnote.weight(.semibold))
-        }
-        .plannerSurfaceCard(cornerRadius: AppTheme.cardCornerRadius)
-    }
-
     private func assignmentCard(_ task: AssignmentTask) -> some View {
         let cardPadding = compactCardsEnabled ? 12.0 : AppTheme.cardPadding
         let cornerRadius = compactCardsEnabled ? 18.0 : AppTheme.cardCornerRadius
@@ -221,10 +142,10 @@ struct TasksView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(task.title)
-                        .font(.system(size: compactCardsEnabled ? 20 : 24, weight: .bold, design: .rounded))
+                        .font(.system(size: compactCardsEnabled ? 19 : 22, weight: .semibold, design: .rounded))
 
                     Text(task.dueDate.formatted(date: .abbreviated, time: .shortened))
-                        .font(.subheadline.monospacedDigit())
+                        .font(.subheadline.monospacedDigit().weight(.medium))
                         .foregroundStyle(.secondary)
                 }
 
@@ -249,25 +170,7 @@ struct TasksView: View {
                 }
             }
 
-            HStack(spacing: 10) {
-                Text(task.status.displayName)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(task.status.isCompleted ? AppTheme.success : .secondary)
-
-                if let course = task.course {
-                    Text("•")
-                        .foregroundStyle(.secondary)
-                    Text(showCourseCodes && !course.code.isEmpty ? "\(course.name) \(course.code)" : course.name)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(Color(hex: course.colorHex))
-                }
-
-                Spacer()
-
-                Text("\(task.estimatedMinutes) min")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+            taskMetaRow(task)
 
             if showTaskNotesPreview {
                 let trimmedNotes = task.notes.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -280,6 +183,16 @@ struct TasksView: View {
             }
 
             HStack(spacing: 10) {
+                Button {
+                    Task { await toggleCompletion(for: task) }
+                } label: {
+                    Label(task.status.isCompleted ? "Reopen" : "Complete", systemImage: task.status.isCompleted ? "arrow.uturn.backward" : "checkmark.circle.fill")
+                        .font((compactCardsEnabled ? Font.footnote : .subheadline).weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(task.status.isCompleted ? .orange : .green)
+
                 Menu {
                     ForEach(TaskStatus.allCases) { status in
                         Button {
@@ -293,28 +206,27 @@ struct TasksView: View {
                             }
                         }
                     }
-                } label: {
-                    Label("Status", systemImage: "ellipsis.circle")
-                        .font((compactCardsEnabled ? Font.footnote : .subheadline).weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
 
-                Button {
-                    Task { await toggleCompletion(for: task) }
-                } label: {
-                    Label(task.status.isCompleted ? "Reopen" : "Complete", systemImage: task.status.isCompleted ? "arrow.uturn.backward" : "checkmark.circle.fill")
-                        .font((compactCardsEnabled ? Font.footnote : .subheadline).weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(task.status.isCompleted ? .orange : .green)
+                    Button {
+                        Task { await deferTaskOneDay(task) }
+                    } label: {
+                        Label("Defer 1 Day", systemImage: "calendar.badge.plus")
+                    }
 
-                Button(role: .destructive) {
-                    deleteTask(task)
+                    Button {
+                        duplicateTask(task)
+                    } label: {
+                        Label("Duplicate", systemImage: "plus.square.on.square")
+                    }
+
+                    Button(role: .destructive) {
+                        deleteTask(task)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
                 } label: {
-                    Image(systemName: "trash")
-                        .font(.subheadline.weight(.semibold))
+                    Label("More", systemImage: "ellipsis.circle")
+                        .font((compactCardsEnabled ? Font.footnote : .subheadline).weight(.semibold))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
@@ -323,6 +235,29 @@ struct TasksView: View {
         .padding(cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .plannerSurfaceCard(padding: 0, cornerRadius: cornerRadius)
+    }
+
+    @ViewBuilder
+    private func taskMetaRow(_ task: AssignmentTask) -> some View {
+        HStack(spacing: 8) {
+            Text(task.status.displayName)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(task.status.isCompleted ? AppTheme.success : .secondary)
+
+            if let course = task.course {
+                Text("•")
+                    .foregroundStyle(.secondary)
+                Text(showCourseCodes && !course.code.isEmpty ? "\(course.name) \(course.code)" : course.name)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Color(hex: course.colorHex))
+            }
+
+            Spacer()
+
+            Text("\(task.estimatedMinutes) min")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
     }
 
     @ViewBuilder

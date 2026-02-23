@@ -162,9 +162,9 @@ final class DashboardViewController: UIViewController {
         heroStack.addArrangedSubview(weekdayLabel)
         heroStack.axis = .vertical
         heroStack.spacing = 0
-        heroStack.setCustomSpacing(2, after: greetingLabel)
+        heroStack.setCustomSpacing(0, after: greetingLabel)
         heroStack.setCustomSpacing(2, after: greetingNameLabel)
-        heroStack.setCustomSpacing(10, after: greetingNudgeLabel)
+        heroStack.setCustomSpacing(8, after: greetingNudgeLabel)
         heroStack.setCustomSpacing(8, after: timeLabel)
 
         contentStack.addArrangedSubview(heroStack)
@@ -201,24 +201,24 @@ final class DashboardViewController: UIViewController {
     }
 
     private func configureStyling() {
-        greetingLabel.font = .systemFont(ofSize: 50, weight: .regular)
+        greetingLabel.font = .systemFont(ofSize: 48, weight: .regular)
         greetingLabel.textColor = .label
         greetingLabel.numberOfLines = 1
 
-        greetingNameLabel.font = .systemFont(ofSize: 46, weight: .regular)
+        greetingNameLabel.font = .systemFont(ofSize: 48, weight: .regular)
         greetingNameLabel.textColor = .secondaryLabel
         greetingNameLabel.numberOfLines = 1
 
-        greetingNudgeLabel.font = .systemFont(ofSize: 17, weight: .medium)
+        greetingNudgeLabel.font = .systemFont(ofSize: 16, weight: .regular)
         greetingNudgeLabel.textColor = .secondaryLabel
         greetingNudgeLabel.numberOfLines = 1
 
-        timeLabel.font = .systemFont(ofSize: 84, weight: .regular)
+        timeLabel.font = .systemFont(ofSize: 72, weight: .regular)
         timeLabel.textColor = .label
         timeLabel.adjustsFontSizeToFitWidth = true
         timeLabel.minimumScaleFactor = 0.72
 
-        weekdayLabel.font = .systemFont(ofSize: 60, weight: .regular)
+        weekdayLabel.font = .systemFont(ofSize: 52, weight: .regular)
         weekdayLabel.textColor = .secondaryLabel
         weekdayLabel.adjustsFontSizeToFitWidth = true
         weekdayLabel.minimumScaleFactor = 0.7
@@ -284,10 +284,10 @@ final class DashboardViewController: UIViewController {
     private func updateHeroText(for now: Date) {
         let displayName = normalizedDisplayName
         let greeting = GreetingComposer.content(for: now, name: displayName)
-        greetingLabel.text = greeting.subheadline
+        greetingLabel.text = timeOfDayGreeting(for: now)
         greetingNameLabel.text = displayName
         greetingNudgeLabel.isHidden = !showGreetingNudges
-        greetingNudgeLabel.text = showGreetingNudges ? greeting.headline : nil
+        greetingNudgeLabel.text = showGreetingNudges ? greeting.subheadline : nil
         timeLabel.attributedText = NSAttributedString(
             string: timeString(from: now),
             attributes: [.kern: -1.8]
