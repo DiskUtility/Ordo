@@ -5,51 +5,78 @@
 //  Created by Vedang Patel on 2026-02-22.
 //
 
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct ContentView: View {
+    // Keep this in sync with PlannerRootViewController.
+    private let onboardingEnabled = false
+
     @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
+    @Query(sort: \StudentProfile.createdAt) private var profiles: [StudentProfile]
+    @State private var hasBootstrapped = false
 
     var body: some View {
-        NavigationSplitView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
-                    }
-                }
-                .onDelete(perform: deleteItems)
+        ZStack {
+            if onboardingEnabled, profiles.first == nil {
+                OnboardingFlowView()
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity,
+                            removal: .move(edge: .leading).combined(with: .opacity)
+                        )
+                    )
+            } else {
+                PlannerTabView(studentLevel: profiles.first?.studentLevel ?? .college)
+                    .transition(
+                        .asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity),
+                            removal: .opacity
+                        )
+                    )
             }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
-            }
-        } detail: {
-            Text("Select an item")
+        }
+        .animation(.spring(response: 0.45, dampingFraction: 0.9), value: profiles.count)
+        .task {
+            guard !hasBootstrapped else { return }
+            hasBootstrapped = true
+            DevelopmentBootstrapper.bootstrapIfNeeded(modelContext: modelContext, existingProfiles: profiles)
         }
     }
+}
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
+private struct PlannerTabView: View {
+    let studentLevel: StudentLevel
+    @State private var animateIn = false
+
+    var body: some View {
+        TabView {
+            DashboardView()
+                .tabItem {
+                    Label("Today", systemImage: "square.grid.2x2")
+                }
+
+            CoursesView(defaultStudentLevel: studentLevel)
+                .tabItem {
+                    Label("Timeline", systemImage: "books.vertical")
+                }
+
+            TasksView()
+                .tabItem {
+                    Label("Tasks", systemImage: "checklist")
+                }
+
+            SettingsView()
+                .tabItem {
+                    Label("Settings", systemImage: "gearshape")
+                }
         }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
+        .tint(AppTheme.accent)
+        .scaleEffect(animateIn ? 1 : 0.985)
+        .opacity(animateIn ? 1 : 0)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.3)) {
+                animateIn = true
             }
         }
     }
@@ -57,5 +84,6 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
+        .modelContainer(for: [StudentProfile.self, AcademicTerm.self, Course.self, AssignmentTask.self], inMemory: true)
+        .environmentObject(AppServices())
 }
