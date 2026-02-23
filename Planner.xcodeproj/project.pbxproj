@@ -32,7 +32,7 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		B2D403B52F4C1BC2002171E4 /* Planner */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Planner;
+			path = OrdoPlanner;
 			sourceTree = "<group>";
 		};
 		B2D403C52F4C1BC3002171E4 /* PlannerTests */ = {

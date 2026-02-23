@@ -9,12 +9,12 @@
 
 ## Main Folders
 
-- `Planner/Models/`
-- `Planner/ViewModels/`
-- `Planner/Views/`
-- `Planner/Services/`
-- `Planner/Utilities/`
-- `Planner/DesignSystem/`
+- `OrdoPlanner/Models/`
+- `OrdoPlanner/ViewModels/`
+- `OrdoPlanner/Views/`
+- `OrdoPlanner/Services/`
+- `OrdoPlanner/Utilities/`
+- `OrdoPlanner/DesignSystem/`
 
 ## Key Data Models
 
