@@ -37,12 +37,12 @@
 		};
 		B2D403C52F4C1BC3002171E4 /* PlannerTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = PlannerTests;
+			path = OrdoPlannerTests;
 			sourceTree = "<group>";
 		};
 		B2D403CF2F4C1BC3002171E4 /* PlannerUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = PlannerUITests;
+			path = OrdoPlannerUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */

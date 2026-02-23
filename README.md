@@ -32,8 +32,8 @@ Everything is on-device. No account and no cloud dependency in this concept vers
 ## Project Layout
 
 - `OrdoPlanner/` app source
-- `PlannerTests/` unit tests
-- `PlannerUITests/` UI tests
+- `OrdoPlannerTests/` unit tests
+- `OrdoPlannerUITests/` UI tests
 - `docs/` product and engineering docs
 
 ## Build
