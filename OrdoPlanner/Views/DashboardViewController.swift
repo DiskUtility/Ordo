@@ -55,6 +55,7 @@ final class DashboardViewController: UIViewController {
 
     private let greetingLabel = UILabel()
     private let greetingNameLabel = UILabel()
+    private let greetingNudgeLabel = UILabel()
     private let timeLabel = UILabel()
     private let weekdayLabel = UILabel()
 
@@ -74,6 +75,9 @@ final class DashboardViewController: UIViewController {
 
     private var compactCardsEnabled: Bool { AppPreferences.compactCardsEnabled }
     private var showCourseCodes: Bool { AppPreferences.showCourseCodes }
+    private var useVibrantCourseCards: Bool { AppPreferences.useVibrantCourseCards }
+    private var showGreetingNudges: Bool { AppPreferences.showGreetingNudges }
+    private var dashboardTaskPreviewCount: Int { AppPreferences.dashboardTaskPreviewCount }
 
     private var clockTimer: Timer?
     private var hasAnimatedEntry = false
@@ -153,12 +157,14 @@ final class DashboardViewController: UIViewController {
 
         heroStack.addArrangedSubview(greetingLabel)
         heroStack.addArrangedSubview(greetingNameLabel)
+        heroStack.addArrangedSubview(greetingNudgeLabel)
         heroStack.addArrangedSubview(timeLabel)
         heroStack.addArrangedSubview(weekdayLabel)
         heroStack.axis = .vertical
         heroStack.spacing = 0
         heroStack.setCustomSpacing(2, after: greetingLabel)
-        heroStack.setCustomSpacing(0, after: greetingNameLabel)
+        heroStack.setCustomSpacing(2, after: greetingNameLabel)
+        heroStack.setCustomSpacing(10, after: greetingNudgeLabel)
         heroStack.setCustomSpacing(8, after: timeLabel)
 
         contentStack.addArrangedSubview(heroStack)
@@ -202,6 +208,10 @@ final class DashboardViewController: UIViewController {
         greetingNameLabel.font = .systemFont(ofSize: 46, weight: .regular)
         greetingNameLabel.textColor = .secondaryLabel
         greetingNameLabel.numberOfLines = 1
+
+        greetingNudgeLabel.font = .systemFont(ofSize: 17, weight: .medium)
+        greetingNudgeLabel.textColor = .secondaryLabel
+        greetingNudgeLabel.numberOfLines = 1
 
         timeLabel.font = .systemFont(ofSize: 84, weight: .regular)
         timeLabel.textColor = .label
@@ -273,8 +283,11 @@ final class DashboardViewController: UIViewController {
 
     private func updateHeroText(for now: Date) {
         let displayName = normalizedDisplayName
-        greetingLabel.text = timeOfDayGreeting(for: now)
+        let greeting = GreetingComposer.content(for: now, name: displayName)
+        greetingLabel.text = greeting.subheadline
         greetingNameLabel.text = displayName
+        greetingNudgeLabel.isHidden = !showGreetingNudges
+        greetingNudgeLabel.text = showGreetingNudges ? greeting.headline : nil
         timeLabel.attributedText = NSAttributedString(
             string: timeString(from: now),
             attributes: [.kern: -1.8]
@@ -309,7 +322,7 @@ final class DashboardViewController: UIViewController {
             upcomingCardStack.addArrangedSubview(overdueLabel)
         }
 
-        let displayTasks = Array(todayTasks.prefix(3))
+        let displayTasks = Array(todayTasks.prefix(dashboardTaskPreviewCount))
         for (index, task) in displayTasks.enumerated() {
             upcomingCardStack.addArrangedSubview(makeUpcomingTaskRow(task))
             if index < displayTasks.count - 1 {
@@ -421,7 +434,7 @@ final class DashboardViewController: UIViewController {
         let iconBubbleSize: CGFloat = compactCardsEnabled ? 28 : 32
         let iconSize: CGFloat = compactCardsEnabled ? 15 : 18
 
-        let baseColor = plannerBaseColor()
+        let baseColor = plannerBaseColor(for: course)
         let card = DashboardGradientCardView(
             startColor: baseColor.withAlphaComponent(0.95),
             endColor: baseColor.darker(by: 0.14)
@@ -517,7 +530,7 @@ final class DashboardViewController: UIViewController {
 
     private func createQuickTask(title: String) {
         let selectedCourse = courses.first
-        let dueDate = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date().addingTimeInterval(86_400)
+        let dueDate = recommendedQuickTaskDueDate()
 
         let task = AssignmentTask(
             title: title,
@@ -544,6 +557,23 @@ final class DashboardViewController: UIViewController {
         }
 
         reloadContent()
+    }
+
+    private func recommendedQuickTaskDueDate() -> Date {
+        let now = Date()
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: now)
+
+        if hour < 20 {
+            return now.addingTimeInterval(4 * 3600)
+        }
+
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+        var components = calendar.dateComponents([.year, .month, .day], from: tomorrow)
+        components.hour = 9
+        components.minute = 0
+        components.second = 0
+        return calendar.date(from: components) ?? tomorrow
     }
 
     private func completeTask(_ task: AssignmentTask) {
@@ -637,8 +667,11 @@ final class DashboardViewController: UIViewController {
         return formatter.string(from: interval) ?? ""
     }
 
-    private func plannerBaseColor() -> UIColor {
-        UIColor(red: 0.95, green: 0.60, blue: 0.28, alpha: 1)
+    private func plannerBaseColor(for course: Course) -> UIColor {
+        if useVibrantCourseCards, let parsedColor = UIColor(hexString: course.colorHex) {
+            return parsedColor
+        }
+        return UIColor(red: 0.95, green: 0.60, blue: 0.28, alpha: 1)
     }
 
     private func plannerIconName(for course: Course) -> String {
@@ -695,12 +728,12 @@ final class DashboardViewController: UIViewController {
         guard !hasAnimatedEntry else { return }
         hasAnimatedEntry = true
 
-        [greetingLabel, greetingNameLabel, timeLabel, weekdayLabel, upcomingTitleLabel, upcomingCardView, plannerTitleLabel, plannerCardsStack].forEach {
+        [greetingLabel, greetingNameLabel, greetingNudgeLabel, timeLabel, weekdayLabel, upcomingTitleLabel, upcomingCardView, plannerTitleLabel, plannerCardsStack].forEach {
             $0.alpha = 0
             $0.transform = CGAffineTransform(translationX: 0, y: 10)
         }
 
-        let views = [greetingLabel, greetingNameLabel, timeLabel, weekdayLabel, upcomingTitleLabel, upcomingCardView, plannerTitleLabel, plannerCardsStack]
+        let views = [greetingLabel, greetingNameLabel, greetingNudgeLabel, timeLabel, weekdayLabel, upcomingTitleLabel, upcomingCardView, plannerTitleLabel, plannerCardsStack]
         for (index, view) in views.enumerated() {
             UIView.animate(
                 withDuration: 0.38,
@@ -738,6 +771,16 @@ final class DashboardViewController: UIViewController {
 }
 
 private extension UIColor {
+    convenience init?(hexString: String) {
+        let hex = hexString.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "")
+        guard hex.count == 6, let value = Int(hex, radix: 16) else { return nil }
+
+        let red = CGFloat((value >> 16) & 0xFF) / 255.0
+        let green = CGFloat((value >> 8) & 0xFF) / 255.0
+        let blue = CGFloat(value & 0xFF) / 255.0
+        self.init(red: red, green: green, blue: blue, alpha: 1)
+    }
+
     func darker(by amount: CGFloat) -> UIColor {
         var red: CGFloat = 0
         var green: CGFloat = 0

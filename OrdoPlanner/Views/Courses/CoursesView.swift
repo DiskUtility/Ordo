@@ -24,6 +24,8 @@ struct CoursesView: View {
 
     @StateObject private var viewModel = CoursesViewModel()
     @State private var draft = CourseEditorView.Draft()
+    @State private var selectedWeekday: Weekday?
+    @AppStorage(AppPreferences.timelineSelectedWeekdayKey) private var persistedSelectedWeekdayRaw = -1
     @AppStorage(AppPreferences.compactCardsEnabledKey) private var compactCardsEnabled = false
     @AppStorage(AppPreferences.showCourseCodesKey) private var showCourseCodes = true
 
@@ -32,13 +34,15 @@ struct CoursesView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if timelineItems.isEmpty {
+                if visibleTimelineItems.isEmpty {
                     ContentUnavailableView("No Courses", systemImage: "calendar", description: Text("Add courses to build your timeline."))
                 } else {
                     ScrollView {
                         VStack(spacing: compactCardsEnabled ? 8 : 10) {
-                            ForEach(Array(timelineItems.enumerated()), id: \.element.id) { index, item in
-                                timelineRow(item: item, isLast: index == timelineItems.count - 1)
+                            summaryStrip
+
+                            ForEach(Array(visibleTimelineItems.enumerated()), id: \.element.id) { index, item in
+                                timelineRow(item: item, isLast: index == visibleTimelineItems.count - 1)
                             }
                         }
                         .padding(AppTheme.screenPadding)
@@ -47,6 +51,13 @@ struct CoursesView: View {
                 }
             }
             .navigationTitle("Timeline")
+            .safeAreaInset(edge: .top, spacing: 0) {
+                weekdayFilterStrip
+                    .padding(.horizontal, AppTheme.screenPadding)
+                    .padding(.top, 6)
+                    .padding(.bottom, 8)
+                    .background(.ultraThinMaterial)
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -63,6 +74,18 @@ struct CoursesView: View {
                     draft: $draft,
                     onSave: saveCourse
                 )
+            }
+            .onAppear {
+                hydrateSelectedWeekdayIfNeeded()
+                setSmartInitialDayIfNeeded()
+            }
+            .onChange(of: selectedWeekday) { _, newValue in
+                // Persist selected timeline day to keep continuity across launches.
+                persistedSelectedWeekdayRaw = newValue?.rawValue ?? -1
+            }
+            .onChange(of: courses.count) { _, _ in
+                // Re-evaluate default day when schedule data changes.
+                setSmartInitialDayIfNeeded()
             }
         }
     }
@@ -83,6 +106,141 @@ struct CoursesView: View {
                 if lhs.startsAt != rhs.startsAt { return lhs.startsAt < rhs.startsAt }
                 return lhs.course.name < rhs.course.name
             }
+    }
+
+    private var visibleTimelineItems: [TimelineItem] {
+        guard let selectedWeekday else {
+            return timelineItems
+        }
+        return timelineItems.filter { $0.weekday == selectedWeekday }
+    }
+
+    private var summaryStrip: some View {
+        HStack(spacing: 12) {
+            summaryPill(title: "Visible", value: "\(visibleTimelineItems.count)")
+            summaryPill(title: "This Week", value: weeklyHoursText)
+            summaryPill(title: "Term", value: activeTerms.first?.name ?? "None")
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .plannerSurfaceCard(padding: 0, cornerRadius: 18)
+    }
+
+    private func summaryPill(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var weekdayFilterStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                weekdayChip(title: "All", selected: selectedWeekday == nil) {
+                    setSelectedWeekday(nil)
+                }
+
+                weekdayChip(title: "Today", selected: selectedWeekday == currentWeekday()) {
+                    setSelectedWeekday(currentWeekday())
+                }
+
+                ForEach(Weekday.allCases) { weekday in
+                    weekdayChip(title: dayTitle(weekday), selected: selectedWeekday == weekday) {
+                        setSelectedWeekday(weekday)
+                    }
+                }
+            }
+        }
+    }
+
+    private func weekdayChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.footnote.weight(.semibold))
+                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .background(selected ? AppTheme.accent.opacity(0.16) : Color.secondary.opacity(0.12))
+                .foregroundStyle(selected ? AppTheme.accent : .secondary)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func setSelectedWeekday(_ weekday: Weekday?) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            selectedWeekday = weekday
+        }
+    }
+
+    private func hydrateSelectedWeekdayIfNeeded() {
+        guard selectedWeekday == nil else { return }
+        selectedWeekday = Weekday(rawValue: persistedSelectedWeekdayRaw)
+    }
+
+    private func setSmartInitialDayIfNeeded() {
+        guard !timelineItems.isEmpty else {
+            selectedWeekday = nil
+            return
+        }
+
+        // Keep existing selection if it still maps to at least one row.
+        if let selectedWeekday,
+           timelineItems.contains(where: { $0.weekday == selectedWeekday }) {
+            return
+        }
+
+        let availableDays = Set(timelineItems.compactMap(\.weekday))
+        guard !availableDays.isEmpty else {
+            selectedWeekday = nil
+            return
+        }
+
+        let today = currentWeekday()
+        if availableDays.contains(today) {
+            selectedWeekday = today
+            return
+        }
+
+        // If today has no classes, jump to the next nearest scheduled day.
+        let next = availableDays.min { lhs, rhs in
+            weekdayDistance(from: today, to: lhs) < weekdayDistance(from: today, to: rhs)
+        }
+        selectedWeekday = next
+    }
+
+    private func weekdayDistance(from start: Weekday, to target: Weekday) -> Int {
+        (target.rawValue - start.rawValue + 7) % 7
+    }
+
+    private func currentWeekday() -> Weekday {
+        switch Calendar.current.component(.weekday, from: Date()) {
+        case 2: return .monday
+        case 3: return .tuesday
+        case 4: return .wednesday
+        case 5: return .thursday
+        case 6: return .friday
+        case 7: return .saturday
+        default: return .sunday
+        }
+    }
+
+    private var weeklyHoursText: String {
+        let courseIDs = Set(visibleTimelineItems.map { $0.course.id })
+        let total = courses
+            .filter { courseIDs.contains($0.id) }
+            .reduce(0.0) { partial, course in
+                partial + max(0, course.endTime.timeIntervalSince(course.startTime))
+            }
+
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute]
+        formatter.unitsStyle = .abbreviated
+        return formatter.string(from: total) ?? "0m"
     }
 
     @ViewBuilder

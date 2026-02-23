@@ -7,8 +7,7 @@ struct GreetingContent {
 
 enum GreetingComposer {
     static func content(for date: Date, name: String, calendar: Calendar = .current) -> GreetingContent {
-        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let displayName = cleanName.isEmpty ? "Student" : cleanName
+        let _ = name.trimmingCharacters(in: .whitespacesAndNewlines)
 
         let weekdayIndex = (calendar.component(.weekday, from: date) + 5) % 7
         let dayName = weekdayName(for: date)
@@ -38,7 +37,7 @@ enum GreetingComposer {
         let dayNudge = dayNudges[weekdayIndex]
 
         return GreetingContent(
-            headline: "\(multilingual), \(displayName)! \(timeGreeting)",
+            headline: "\(multilingual) · \(timeGreeting)",
             subheadline: "\(dayName): \(dayNudge)"
         )
     }

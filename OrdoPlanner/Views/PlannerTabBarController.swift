@@ -54,6 +54,19 @@ final class PlannerTabBarController: UITabBarController {
 
         viewControllers = [dashboard, courses, tasks, settings]
         tabBar.tintColor = UIColor(AppTheme.accent)
+        tabBar.unselectedItemTintColor = .secondaryLabel
+        tabBar.layer.cornerRadius = 18
+        tabBar.layer.masksToBounds = true
+
+        let appearance = UITabBarAppearance()
+        appearance.configureWithOpaqueBackground()
+        appearance.backgroundEffect = UIBlurEffect(style: .systemThinMaterial)
+        appearance.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.9)
+
+        tabBar.standardAppearance = appearance
+        if #available(iOS 15.0, *) {
+            tabBar.scrollEdgeAppearance = appearance
+        }
     }
 
     private func makeUIKitNavController(root: UIViewController, title: String, imageName: String) -> UINavigationController {

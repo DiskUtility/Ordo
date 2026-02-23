@@ -35,6 +35,10 @@ struct SettingsView: View {
     @State private var fallbackDisplayName: String = AppPreferences.fallbackDisplayName
     @AppStorage(AppPreferences.compactCardsEnabledKey) private var compactCardsEnabled = false
     @AppStorage(AppPreferences.showCourseCodesKey) private var showCourseCodes = true
+    @AppStorage(AppPreferences.showTaskNotesPreviewKey) private var showTaskNotesPreview = true
+    @AppStorage(AppPreferences.useVibrantCourseCardsKey) private var useVibrantCourseCards = true
+    @AppStorage(AppPreferences.showGreetingNudgesKey) private var showGreetingNudges = true
+    @AppStorage(AppPreferences.dashboardTaskPreviewCountKey) private var dashboardTaskPreviewCount = 3
 
     var body: some View {
         NavigationStack {
@@ -64,19 +68,23 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("App") {
-                    Text("Planner MVP")
-                    Text("Local-first student planner")
-                        .foregroundStyle(.secondary)
-                }
-
                 Section("Display") {
                     Toggle("Compact cards", isOn: $compactCardsEnabled)
                     Toggle("Show course codes", isOn: $showCourseCodes)
+                    Toggle("Show task notes preview", isOn: $showTaskNotesPreview)
 
                     Button("Reset display preferences") {
                         compactCardsEnabled = false
                         showCourseCodes = true
+                        showTaskNotesPreview = true
+                    }
+                }
+
+                Section("Today Screen") {
+                    Toggle("Vibrant course cards", isOn: $useVibrantCourseCards)
+                    Toggle("Show greeting nudge", isOn: $showGreetingNudges)
+                    Stepper(value: $dashboardTaskPreviewCount, in: 1...6) {
+                        Text("Upcoming preview count: \(dashboardTaskPreviewCount)")
                     }
                 }
 
@@ -94,6 +102,12 @@ struct SettingsView: View {
                     LabeledContent("Courses", value: "\(courses.count)")
                     LabeledContent("Tasks", value: "\(tasks.count)")
                     LabeledContent("Completed", value: "\(completedTaskCount)")
+                }
+
+                Section("About") {
+                    Text("Ordo: Planner")
+                    Text("Local-first student planner for classes, tasks, and reminders.")
+                        .foregroundStyle(.secondary)
                 }
 
                 #if DEBUG

@@ -21,15 +21,21 @@ struct TasksView: View {
     @State private var isFilterExpanded = false
     @AppStorage(AppPreferences.compactCardsEnabledKey) private var compactCardsEnabled = false
     @AppStorage(AppPreferences.showCourseCodesKey) private var showCourseCodes = true
+    @AppStorage(AppPreferences.showTaskNotesPreviewKey) private var showTaskNotesPreview = true
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
+                    quickStatsStrip
                     filterToggleSection
 
                     if filteredTasks.isEmpty {
-                        ContentUnavailableView("No Tasks", systemImage: "checklist", description: Text("Try another filter or add a new task."))
+                        ContentUnavailableView(
+                            "No Tasks",
+                            systemImage: viewModel.searchText.isEmpty ? "checklist" : "magnifyingglass",
+                            description: Text(emptyStateDescription)
+                        )
                             .frame(maxWidth: .infinity)
                             .padding(.top, 36)
                     } else {
@@ -38,6 +44,9 @@ struct TasksView: View {
                                 .onTapGesture {
                                     startEditing(task)
                                 }
+                                .contextMenu {
+                                    contextMenuItems(for: task)
+                                }
                         }
                     }
                 }
@@ -45,6 +54,7 @@ struct TasksView: View {
             }
             .background(AppTheme.screenBackground)
             .navigationTitle("Tasks")
+            .searchable(text: $viewModel.searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search tasks or courses")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -63,6 +73,9 @@ struct TasksView: View {
                     onSave: saveTask
                 )
             }
+            .onAppear {
+                viewModel.syncSelectedCourse(with: courses)
+            }
         }
     }
 
@@ -71,13 +84,58 @@ struct TasksView: View {
     }
 
     private var hasCustomFilters: Bool {
-        viewModel.statusFilter != .all || viewModel.selectedCourseID != nil
+        viewModel.statusFilter != .all ||
+            viewModel.selectedCourseID != nil ||
+            viewModel.focusModeEnabled ||
+            viewModel.sortOption != .dueSoonest ||
+            !viewModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var filterSummary: String {
         let status = viewModel.statusFilter.title
         let course = courses.first(where: { $0.id == viewModel.selectedCourseID })?.name ?? "All courses"
-        return "\(status) • \(course)"
+        let focus = viewModel.focusModeEnabled ? "Focus" : "Full"
+        return "\(status) • \(course) • \(focus)"
+    }
+
+    private var emptyStateDescription: String {
+        if !viewModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "No tasks match your search."
+        }
+        if viewModel.focusModeEnabled {
+            return "No active tasks due in the next 48 hours."
+        }
+        return "Try another filter or add a new task."
+    }
+
+    private var triageBucket: TriageBucket {
+        services.triageScorer.bucketize(tasks: tasks, now: Date(), calendar: .current)
+    }
+
+    private var quickStatsStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                statsPill(label: "Overdue", count: triageBucket.overdue.count, color: .red)
+                statsPill(label: "Today", count: triageBucket.today.count, color: AppTheme.accent)
+                statsPill(label: "Upcoming", count: triageBucket.upcoming.count, color: .orange)
+                statsPill(label: "Completed", count: tasks.filter { task in task.status.isCompleted }.count, color: AppTheme.success)
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private func statsPill(label: String, count: Int, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+            Text("\(count)")
+                .font(.caption.monospacedDigit().weight(.bold))
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(color.opacity(0.12))
+        .foregroundStyle(color)
+        .clipShape(Capsule())
     }
 
     private var filterToggleSection: some View {
@@ -88,7 +146,23 @@ struct TasksView: View {
                         isFilterExpanded.toggle()
                     }
                 } label: {
-                    Label(isFilterExpanded ? "Hide Filters" : "Filters", systemImage: isFilterExpanded ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    Label(
+                        isFilterExpanded ? "Hide Filters" : "Filters",
+                        systemImage: isFilterExpanded ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"
+                    )
+                    .font(.footnote.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Menu {
+                    Picker("Sort", selection: $viewModel.sortOption) {
+                        ForEach(TasksViewModel.SortOption.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+                } label: {
+                    Label(viewModel.sortOption.title, systemImage: "arrow.up.arrow.down.circle")
                         .font(.footnote.weight(.semibold))
                 }
                 .buttonStyle(.bordered)
@@ -126,6 +200,15 @@ struct TasksView: View {
                     Text(course.name).tag(Optional(course.id))
                 }
             }
+
+            Toggle("Focus mode (next 48h)", isOn: $viewModel.focusModeEnabled)
+                .font(.subheadline.weight(.medium))
+                .tint(AppTheme.accent)
+
+            Button("Reset filters") {
+                viewModel.resetFilters()
+            }
+            .font(.footnote.weight(.semibold))
         }
         .plannerSurfaceCard(cornerRadius: AppTheme.cardCornerRadius)
     }
@@ -147,13 +230,23 @@ struct TasksView: View {
 
                 Spacer()
 
-                Text(task.priority.displayName)
-                    .font(.footnote.weight(.semibold))
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 10)
-                    .background(priorityChipColor(task.priority).opacity(0.16))
-                    .clipShape(Capsule())
-                    .foregroundStyle(priorityChipColor(task.priority))
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text(taskDuePillText(task))
+                        .font(.caption.weight(.semibold))
+                        .padding(.vertical, 5)
+                        .padding(.horizontal, 9)
+                        .background(duePillColor(task).opacity(0.16))
+                        .clipShape(Capsule())
+                        .foregroundStyle(duePillColor(task))
+
+                    Text(task.priority.displayName)
+                        .font(.footnote.weight(.semibold))
+                        .padding(.vertical, 5)
+                        .padding(.horizontal, 9)
+                        .background(priorityChipColor(task.priority).opacity(0.16))
+                        .clipShape(Capsule())
+                        .foregroundStyle(priorityChipColor(task.priority))
+                }
             }
 
             HStack(spacing: 10) {
@@ -176,7 +269,37 @@ struct TasksView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if showTaskNotesPreview {
+                let trimmedNotes = task.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedNotes.isEmpty {
+                    Text(trimmedNotes)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(compactCardsEnabled ? 2 : 3)
+                }
+            }
+
             HStack(spacing: 10) {
+                Menu {
+                    ForEach(TaskStatus.allCases) { status in
+                        Button {
+                            Task { await setStatus(task, to: status) }
+                        } label: {
+                            HStack {
+                                Text(status.displayName)
+                                if task.status == status {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    Label("Status", systemImage: "ellipsis.circle")
+                        .font((compactCardsEnabled ? Font.footnote : .subheadline).weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+
                 Button {
                     Task { await toggleCompletion(for: task) }
                 } label: {
@@ -190,8 +313,8 @@ struct TasksView: View {
                 Button(role: .destructive) {
                     deleteTask(task)
                 } label: {
-                    Label("Delete", systemImage: "trash")
-                        .font((compactCardsEnabled ? Font.footnote : .subheadline).weight(.semibold))
+                    Image(systemName: "trash")
+                        .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
@@ -200,6 +323,27 @@ struct TasksView: View {
         .padding(cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .plannerSurfaceCard(padding: 0, cornerRadius: cornerRadius)
+    }
+
+    @ViewBuilder
+    private func contextMenuItems(for task: AssignmentTask) -> some View {
+        Button {
+            Task { await deferTaskOneDay(task) }
+        } label: {
+            Label("Defer 1 Day", systemImage: "calendar.badge.plus")
+        }
+
+        Button {
+            duplicateTask(task)
+        } label: {
+            Label("Duplicate", systemImage: "plus.square.on.square")
+        }
+
+        Button(role: .destructive) {
+            deleteTask(task)
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
     }
 
     private func priorityChipColor(_ priority: PriorityLevel) -> Color {
@@ -213,9 +357,44 @@ struct TasksView: View {
         }
     }
 
+    private func taskDuePillText(_ task: AssignmentTask) -> String {
+        let calendar = Calendar.current
+        if task.status.isCompleted { return "Done" }
+        if task.dueDate < Date() { return "Overdue" }
+        if calendar.isDateInToday(task.dueDate) { return "Today" }
+        if calendar.isDateInTomorrow(task.dueDate) { return "Tomorrow" }
+        return task.dueDate.formatted(.dateTime.weekday(.abbreviated))
+    }
+
+    private func duePillColor(_ task: AssignmentTask) -> Color {
+        if task.status.isCompleted { return AppTheme.success }
+        if task.dueDate < Date() { return .red }
+        if Calendar.current.isDateInToday(task.dueDate) { return AppTheme.accent }
+        return .secondary
+    }
+
     private func startCreating() {
-        draft = TaskEditorView.Draft(selectedCourseID: courses.first?.id)
+        var newDraft = TaskEditorView.Draft(selectedCourseID: courses.first?.id)
+        newDraft.dueDate = recommendedNewTaskDueDate()
+        draft = newDraft
         viewModel.startCreating()
+    }
+
+    private func recommendedNewTaskDueDate() -> Date {
+        let now = Date()
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: now)
+
+        if hour < 20 {
+            return now.addingTimeInterval(4 * 3600)
+        }
+
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+        var components = calendar.dateComponents([.year, .month, .day], from: tomorrow)
+        components.hour = 9
+        components.minute = 0
+        components.second = 0
+        return calendar.date(from: components) ?? tomorrow
     }
 
     private func startEditing(_ task: AssignmentTask) {
@@ -290,6 +469,53 @@ struct TasksView: View {
             await services.notificationScheduler.cancel(taskID: task.id)
         }
         modelContext.delete(task)
+        try? modelContext.save()
+    }
+
+    private func duplicateTask(_ task: AssignmentTask) {
+        let duplicated = AssignmentTask(
+            title: task.title,
+            notes: task.notes,
+            dueDate: task.dueDate,
+            estimatedMinutes: task.estimatedMinutes,
+            priority: task.priority,
+            status: .notStarted,
+            course: task.course,
+            completedAt: nil
+        )
+        duplicated.courseID = task.courseID
+        modelContext.insert(duplicated)
+
+        let reminderLeadHours = profiles.first?.defaultReminderLeadHours ?? 24
+        Task {
+            try? await services.notificationScheduler.schedule(for: duplicated, leadHours: reminderLeadHours)
+        }
+
+        try? modelContext.save()
+    }
+
+    private func deferTaskOneDay(_ task: AssignmentTask) async {
+        task.dueDate = Calendar.current.date(byAdding: .day, value: 1, to: task.dueDate) ?? task.dueDate
+
+        if !task.status.isCompleted {
+            let reminderLeadHours = profiles.first?.defaultReminderLeadHours ?? 24
+            try? await services.notificationScheduler.schedule(for: task, leadHours: reminderLeadHours)
+        }
+
+        try? modelContext.save()
+    }
+
+    private func setStatus(_ task: AssignmentTask, to status: TaskStatus) async {
+        task.status = status
+        task.completedAt = status.isCompleted ? Date() : nil
+
+        if status.isCompleted {
+            await services.notificationScheduler.cancel(taskID: task.id)
+        } else {
+            let reminderLeadHours = profiles.first?.defaultReminderLeadHours ?? 24
+            try? await services.notificationScheduler.schedule(for: task, leadHours: reminderLeadHours)
+        }
+
         try? modelContext.save()
     }
 

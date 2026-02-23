@@ -30,17 +30,17 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		B2D403B52F4C1BC2002171E4 /* Planner */ = {
+		B2D403B52F4C1BC2002171E4 /* OrdoPlanner */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = OrdoPlanner;
 			sourceTree = "<group>";
 		};
-		B2D403C52F4C1BC3002171E4 /* PlannerTests */ = {
+		B2D403C52F4C1BC3002171E4 /* OrdoPlannerTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = OrdoPlannerTests;
 			sourceTree = "<group>";
 		};
-		B2D403CF2F4C1BC3002171E4 /* PlannerUITests */ = {
+		B2D403CF2F4C1BC3002171E4 /* OrdoPlannerUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = OrdoPlannerUITests;
 			sourceTree = "<group>";
@@ -75,9 +75,9 @@
 		B2D403AA2F4C1BC2002171E4 = {
 			isa = PBXGroup;
 			children = (
-				B2D403B52F4C1BC2002171E4 /* Planner */,
-				B2D403C52F4C1BC3002171E4 /* PlannerTests */,
-				B2D403CF2F4C1BC3002171E4 /* PlannerUITests */,
+				B2D403B52F4C1BC2002171E4 /* OrdoPlanner */,
+				B2D403C52F4C1BC3002171E4 /* OrdoPlannerTests */,
+				B2D403CF2F4C1BC3002171E4 /* OrdoPlannerUITests */,
 				B2D403B42F4C1BC2002171E4 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -108,7 +108,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				B2D403B52F4C1BC2002171E4 /* Planner */,
+				B2D403B52F4C1BC2002171E4 /* OrdoPlanner */,
 			);
 			name = Planner;
 			packageProductDependencies = (
@@ -131,7 +131,7 @@
 				B2D403C42F4C1BC3002171E4 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				B2D403C52F4C1BC3002171E4 /* PlannerTests */,
+				B2D403C52F4C1BC3002171E4 /* OrdoPlannerTests */,
 			);
 			name = PlannerTests;
 			packageProductDependencies = (
@@ -154,7 +154,7 @@
 				B2D403CE2F4C1BC3002171E4 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				B2D403CF2F4C1BC3002171E4 /* PlannerUITests */,
+				B2D403CF2F4C1BC3002171E4 /* OrdoPlannerUITests */,
 			);
 			name = PlannerUITests;
 			packageProductDependencies = (
@@ -405,6 +405,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -437,6 +438,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
