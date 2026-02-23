@@ -1,32 +1,41 @@
-//
-//  PlannerApp.swift
-//  Planner
-//
-//  Created by Vedang Patel on 2026-02-22.
-//
-
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 @main
 struct PlannerApp: App {
-    var sharedModelContainer: ModelContainer = {
+    @StateObject private var services = AppServices()
+
+    private var sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Item.self,
+            StudentProfile.self,
+            AcademicTerm.self,
+            Course.self,
+            AssignmentTask.self,
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+
+        if ProcessInfo.processInfo.arguments.contains("-uiTestResetData") {
+            AppStorePaths.removeKnownStores()
+        }
+
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
         do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            return try ModelContainer(for: schema, configurations: [configuration])
         } catch {
-            fatalError("Could not create ModelContainer: \(error)")
+            // Pre-release safety fallback: reset local store when schema migrations fail.
+            AppStorePaths.removeKnownStores()
+            do {
+                let cleanConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+                return try ModelContainer(for: schema, configurations: [cleanConfiguration])
+            } catch {
+                fatalError("Could not create ModelContainer: \(error)")
+            }
         }
     }()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            PlannerRootView(modelContainer: sharedModelContainer, services: services)
         }
-        .modelContainer(sharedModelContainer)
     }
 }
